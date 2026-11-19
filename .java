@@ -4,22 +4,37 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.BlockTags;
 import net.minecraft.world.damagesource.DamageSource;
+import net.minecraft.world.entity.AgeableMob;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.entity.MobCategory;
+import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.entity.ai.goal.*;
 import net.minecraft.world.entity.ai.goal.target.TargetGoal;
 import net.minecraft.world.entity.animal.Animal;
+import net.minecraft.world.item.CreativeModeTabs;
+import net.minecraft.world.item.Item;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
-import net.minecraft.server.level.ServerLevel;
+import net.minecraftforge.common.ForgeSpawnEggItem;
 import net.minecraftforge.common.MinecraftForge;
+import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
+import net.minecraftforge.event.entity.EntityAttributeCreationEvent;
+import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.registries.DeferredRegister;
+import net.minecraftforge.registries.ForgeRegistries;
+import net.minecraftforge.registries.RegistryObject;
+import org.jetbrains.annotations.Nullable;
 
 import java.util.EnumSet;
 import java.util.List;
@@ -28,19 +43,69 @@ import java.util.List;
 public class ElkMod {
     public static final String MOD_ID = "elkmod";
 
+    // 1. Create Registries for Entities and Items
+    public static final DeferredRegister<EntityType<?>> ENTITY_TYPES =
+            DeferredRegister.create(ForgeRegistries.ENTITY_TYPES, MOD_ID);
+    public static final DeferredRegister<Item> ITEMS =
+            DeferredRegister.create(ForgeRegistries.ITEMS, MOD_ID);
+
+    // 2. Register the Elk Entity
+    public static final RegistryObject<EntityType<ElkEntity>> ELK = ENTITY_TYPES.register("elk",
+            () -> EntityType.Builder.of(ElkEntity::new, MobCategory.CREATURE)
+                    .sized(1.4f, 1.8f) // Hitbox width and height
+                    .build(new ResourceLocation(MOD_ID, "elk").toString()));
+
+    // 3. Register the Elk Spawn Egg (Brown base: 0x6E472B, Tan spots: 0xC8A985)
+    public static final RegistryObject<Item> ELK_SPAWN_EGG = ITEMS.register("elk_spawn_egg",
+            () -> new ForgeSpawnEggItem(ELK, 0x6E472B, 0xC8A985, new Item.Properties()));
+
     public ElkMod() {
-        // Register for server/mod events if needed
+        IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
+
+        // Hook registries into the Mod Event Bus
+        ENTITY_TYPES.register(modEventBus);
+        ITEMS.register(modEventBus);
+
+        // Register attributes and creative tab events
+        modEventBus.addListener(this::registerAttributes);
+        modEventBus.addListener(this::addCreative);
+
         MinecraftForge.EVENT_BUS.register(this);
+    }
+
+    // Give the Elk health, speed, and attack damage so it doesn't crash on spawn
+    private void registerAttributes(EntityAttributeCreationEvent event) {
+        event.put(ELK.get(), ElkEntity.createAttributes().build());
+    }
+
+    // Put the spawn egg into the Spawn Eggs tab in Creative Mode
+    private void addCreative(BuildCreativeModeTabContentsEvent event) {
+        if (event.getTabKey() == CreativeModeTabs.SPAWN_EGGS) {
+            event.accept(ELK_SPAWN_EGG);
+        }
     }
 
     // --- ELK ENTITY CLASS CONTAINING ALL CUSTOM AI & GENETICS ---
     public static class ElkEntity extends Animal {
-        // 1.20.1 Forge Data Parameters
         private static final EntityDataAccessor<Float> ANTLER_SIZE = SynchedEntityData.defineId(ElkEntity.class, EntityDataSerializers.FLOAT);
         private static final EntityDataAccessor<Integer> COAT_VARIANT = SynchedEntityData.defineId(ElkEntity.class, EntityDataSerializers.INT);
 
         public ElkEntity(EntityType<? extends Animal> type, Level level) {
             super(type, level);
+        }
+
+        public static AttributeSupplier.Builder createAttributes() {
+            return Animal.createLivingAttributes()
+                    .add(Attributes.MAX_HEALTH, 25.0D)
+                    .add(Attributes.MOVEMENT_SPEED, 0.25D)
+                    .add(Attributes.ATTACK_DAMAGE, 4.0D)
+                    .add(Attributes.FOLLOW_RANGE, 24.0D);
+        }
+
+        @Nullable
+        @Override
+        public AgeableMob getBreedOffspring(ServerLevel level, AgeableMob otherParent) {
+            return ELK.get().create(level);
         }
 
         @Override
@@ -71,7 +136,6 @@ public class ElkMod {
         public void die(DamageSource damageSource) {
             super.die(damageSource);
             if (!this.level().isClientSide()) {
-                // Herd panic ripple effect when an elk dies
                 AABB searchBox = this.getBoundingBox().inflate(16.0D, 8.0D, 16.0D);
                 List<ElkEntity> nearbyElk = this.level().getEntitiesOfClass(ElkEntity.class, searchBox);
                 for (ElkEntity elk : nearbyElk) {
@@ -95,7 +159,7 @@ public class ElkMod {
             this.goalSelector.addGoal(5, new ElkHerdGroupGoal(this));
             this.goalSelector.addGoal(6, new ElkSeekWaterGoal(this, 1.1D));
             this.goalSelector.addGoal(7, new ElkGrazeGoal(this));
-            this.goalSelector.addGoal(8, new WaterAvoidingRandomStrayGoal(this, 1.0D));
+            this.goalSelector.addGoal(8, new WaterAvoidingRandomStrollGoal(this, 1.0D));
 
             this.targetSelector.addGoal(1, new BullChargeGoal(this));
         }
