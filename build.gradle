@@ -41,7 +41,8 @@ minecraft {
 
 sourceSets.main.resources { srcDir 'src/main/resources' }
 
-dependencies repositories {
+dependencies 
+repositories {
     mavenCentral()
     maven {
         name = 'MinecraftForge'
