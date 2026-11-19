@@ -15,6 +15,7 @@ java.toolchain.languageVersion = JavaLanguageVersion.of(17)
 
 minecraft {
     mappings channel: 'official', version: '1.20.1'
+
     runs {
         client {
             workingDirectory project.file('run')
@@ -41,7 +42,10 @@ minecraft {
 
 sourceSets.main.resources { srcDir 'src/main/resources' }
 
-dependencies 
+dependencies {
+    minecraft 'net.minecraftforge:forge:1.20.1-47.2.0'
+}
+
 repositories {
     mavenCentral()
     maven {
@@ -52,8 +56,6 @@ repositories {
         name = 'SpongePowered'
         url = 'https://repo.spongepowered.org/repository/maven-public/'
     }
-}
-    minecraft 'net.minecraftforge:forge:1.20.1-47.2.0'
 }
 
 jar {
