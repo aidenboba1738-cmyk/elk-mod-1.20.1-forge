@@ -1,5 +1,14 @@
 package com.wildlife.elkmod;
 
+import com.mojang.blaze3d.vertex.PoseStack;
+import com.mojang.blaze3d.vertex.VertexConsumer;
+import net.minecraft.client.model.EntityModel;
+import net.minecraft.client.model.geom.ModelLayerLocation;
+import net.minecraft.client.model.geom.ModelPart;
+import net.minecraft.client.model.geom.PartPose;
+import net.minecraft.client.model.geom.builders.*;
+import net.minecraft.client.renderer.entity.EntityRendererProvider;
+import net.minecraft.client.renderer.entity.MobRenderer;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
@@ -8,6 +17,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.sounds.SoundEvents;
 import net.minecraft.tags.BlockTags;
+import net.minecraft.util.Mth;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.entity.AgeableMob;
 import net.minecraft.world.entity.EntityType;
@@ -24,11 +34,14 @@ import net.minecraft.world.level.Level;
 import net.minecraft.world.level.LevelReader;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.AABB;
+import net.minecraftforge.api.distmarker.Dist;
+import net.minecraftforge.client.event.EntityRenderersEvent;
 import net.minecraftforge.common.ForgeSpawnEggItem;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.BuildCreativeModeTabContentsEvent;
 import net.minecraftforge.event.entity.EntityAttributeCreationEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.registries.DeferredRegister;
@@ -43,45 +56,160 @@ import java.util.List;
 public class ElkMod {
     public static final String MOD_ID = "elkmod";
 
-    // 1. Create Registries for Entities and Items
     public static final DeferredRegister<EntityType<?>> ENTITY_TYPES =
             DeferredRegister.create(ForgeRegistries.ENTITY_TYPES, MOD_ID);
     public static final DeferredRegister<Item> ITEMS =
             DeferredRegister.create(ForgeRegistries.ITEMS, MOD_ID);
 
-    // 2. Register the Elk Entity
     public static final RegistryObject<EntityType<ElkEntity>> ELK = ENTITY_TYPES.register("elk",
             () -> EntityType.Builder.of(ElkEntity::new, MobCategory.CREATURE)
-                    .sized(1.4f, 1.8f) // Hitbox width and height
+                    .sized(1.4f, 1.8f)
                     .build(new ResourceLocation(MOD_ID, "elk").toString()));
 
-    // 3. Register the Elk Spawn Egg (Brown base: 0x6E472B, Tan spots: 0xC8A985)
     public static final RegistryObject<Item> ELK_SPAWN_EGG = ITEMS.register("elk_spawn_egg",
             () -> new ForgeSpawnEggItem(ELK, 0x6E472B, 0xC8A985, new Item.Properties()));
 
     public ElkMod() {
         IEventBus modEventBus = FMLJavaModLoadingContext.get().getModEventBus();
 
-        // Hook registries into the Mod Event Bus
         ENTITY_TYPES.register(modEventBus);
         ITEMS.register(modEventBus);
 
-        // Register attributes and creative tab events
         modEventBus.addListener(this::registerAttributes);
         modEventBus.addListener(this::addCreative);
 
         MinecraftForge.EVENT_BUS.register(this);
     }
 
-    // Give the Elk health, speed, and attack damage so it doesn't crash on spawn
     private void registerAttributes(EntityAttributeCreationEvent event) {
         event.put(ELK.get(), ElkEntity.createAttributes().build());
     }
 
-    // Put the spawn egg into the Spawn Eggs tab in Creative Mode
     private void addCreative(BuildCreativeModeTabContentsEvent event) {
         if (event.getTabKey() == CreativeModeTabs.SPAWN_EGGS) {
             event.accept(ELK_SPAWN_EGG);
+        }
+    }
+
+    // --- CLIENT-SIDE RENDERER & MODEL REGISTRATION ---
+    @Mod.EventBusSubscriber(modid = MOD_ID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
+    public static class ClientModEvents {
+        @SubscribeEvent
+        public static void registerLayerDefinitions(EntityRenderersEvent.RegisterLayerDefinitions event) {
+            event.registerLayerDefinition(ElkModel.LAYER_LOCATION, ElkModel::createBodyLayer);
+        }
+
+        @SubscribeEvent
+        public static void registerRenderers(EntityRenderersEvent.RegisterRenderers event) {
+            event.registerEntityRenderer(ELK.get(), ElkRenderer::new);
+        }
+    }
+
+    // --- BASIC 3D MODEL FOR THE ELK ---
+    public static class ElkModel extends EntityModel<ElkEntity> {
+        public static final ModelLayerLocation LAYER_LOCATION =
+                new ModelLayerLocation(new ResourceLocation(MOD_ID, "elk"), "main");
+
+        private final ModelPart body;
+        private final ModelPart head;
+        private final ModelPart leftAntler;
+        private final ModelPart rightAntler;
+        private final ModelPart leg1;
+        private final ModelPart leg2;
+        private final ModelPart leg3;
+        private final ModelPart leg4;
+
+        public ElkModel(ModelPart root) {
+            this.body = root.getChild("body");
+            this.head = root.getChild("head");
+            this.leftAntler = this.head.getChild("left_antler");
+            this.rightAntler = this.head.getChild("right_antler");
+            this.leg1 = root.getChild("leg1");
+            this.leg2 = root.getChild("leg2");
+            this.leg3 = root.getChild("leg3");
+            this.leg4 = root.getChild("leg4");
+        }
+
+        public static LayerDefinition createBodyLayer() {
+            MeshDefinition meshdefinition = new MeshDefinition();
+            PartDefinition partdefinition = meshdefinition.getRoot();
+
+            // Torso
+            partdefinition.addOrReplaceChild("body", CubeListBuilder.create()
+                    .texOffs(0, 0).addBox(-6.0F, -10.0F, -10.0F, 12.0F, 10.0F, 20.0F),
+                    PartPose.offset(0.0F, 12.0F, 0.0F));
+
+            // Head & Neck
+            PartDefinition head = partdefinition.addOrReplaceChild("head", CubeListBuilder.create()
+                    .texOffs(0, 30).addBox(-4.0F, -12.0F, -6.0F, 8.0F, 12.0F, 8.0F)
+                    .texOffs(32, 30).addBox(-3.0F, -10.0F, -11.0F, 6.0F, 5.0F, 5.0F),
+                    PartPose.offset(0.0F, 6.0F, -9.0F));
+
+            // Antlers (attached to head so they move with it)
+            head.addOrReplaceChild("left_antler", CubeListBuilder.create()
+                    .texOffs(0, 0).addBox(2.0F, -22.0F, -2.0F, 2.0F, 10.0F, 2.0F)
+                    .texOffs(0, 0).addBox(2.0F, -20.0F, -6.0F, 2.0F, 2.0F, 6.0F),
+                    PartPose.ZERO);
+
+            head.addOrReplaceChild("right_antler", CubeListBuilder.create()
+                    .texOffs(0, 0).addBox(-4.0F, -22.0F, -2.0F, 2.0F, 10.0F, 2.0F)
+                    .texOffs(0, 0).addBox(-4.0F, -20.0F, -6.0F, 2.0F, 2.0F, 6.0F),
+                    PartPose.ZERO);
+
+            // 4 Legs
+            CubeListBuilder legBox = CubeListBuilder.create().texOffs(44, 0).addBox(-2.0F, 0.0F, -2.0F, 4.0F, 12.0F, 4.0F);
+            partdefinition.addOrReplaceChild("leg1", legBox, PartPose.offset(-3.5F, 12.0F, 7.0F));
+            partdefinition.addOrReplaceChild("leg2", legBox, PartPose.offset(3.5F, 12.0F, 7.0F));
+            partdefinition.addOrReplaceChild("leg3", legBox, PartPose.offset(-3.5F, 12.0F, -7.0F));
+            partdefinition.addOrReplaceChild("leg4", legBox, PartPose.offset(3.5F, 12.0F, -7.0F));
+
+            return LayerDefinition.create(meshdefinition, 64, 64);
+        }
+
+        @Override
+        public void setupAnim(ElkEntity entity, float limbSwing, float limbSwingAmount, float ageInTicks, float netHeadYaw, float headPitch) {
+            // Head rotation
+            this.head.xRot = headPitch * ((float) Math.PI / 180F);
+            this.head.yRot = netHeadYaw * ((float) Math.PI / 180F);
+
+            // Walking leg swing
+            this.leg1.xRot = Mth.cos(limbSwing * 0.6662F) * 1.4F * limbSwingAmount;
+            this.leg2.xRot = Mth.cos(limbSwing * 0.6662F + (float) Math.PI) * 1.4F * limbSwingAmount;
+            this.leg3.xRot = Mth.cos(limbSwing * 0.6662F + (float) Math.PI) * 1.4F * limbSwingAmount;
+            this.leg4.xRot = Mth.cos(limbSwing * 0.6662F) * 1.4F * limbSwingAmount;
+
+            // Scale antlers dynamically based on your ANTLER_SIZE genetics!
+            float antlerScale = entity.getAntlerSize();
+            this.leftAntler.xScale = antlerScale;
+            this.leftAntler.yScale = antlerScale;
+            this.leftAntler.zScale = antlerScale;
+            this.rightAntler.xScale = antlerScale;
+            this.rightAntler.yScale = antlerScale;
+            this.rightAntler.zScale = antlerScale;
+        }
+
+        @Override
+        public void renderToBuffer(PoseStack poseStack, VertexConsumer vertexConsumer, int packedLight, int packedOverlay, float red, float green, float blue, float alpha) {
+            body.render(poseStack, vertexConsumer, packedLight, packedOverlay, red, green, blue, alpha);
+            head.render(poseStack, vertexConsumer, packedLight, packedOverlay, red, green, blue, alpha);
+            leg1.render(poseStack, vertexConsumer, packedLight, packedOverlay, red, green, blue, alpha);
+            leg2.render(poseStack, vertexConsumer, packedLight, packedOverlay, red, green, blue, alpha);
+            leg3.render(poseStack, vertexConsumer, packedLight, packedOverlay, red, green, blue, alpha);
+            leg4.render(poseStack, vertexConsumer, packedLight, packedOverlay, red, green, blue, alpha);
+        }
+    }
+
+    // --- ENTITY RENDERER ---
+    public static class ElkRenderer extends MobRenderer<ElkEntity, ElkModel> {
+        private static final ResourceLocation TEXTURE = new ResourceLocation(MOD_ID, "textures/entity/elk.png");
+
+        public ElkRenderer(EntityRendererProvider.Context context) {
+            super(context, new ElkModel(context.bakeLayer(ElkModel.LAYER_LOCATION)), 0.85F);
+        }
+
+        @Override
+        public ResourceLocation getTextureLocation(ElkEntity entity) {
+            return TEXTURE;
         }
     }
 
