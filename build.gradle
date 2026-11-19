@@ -41,11 +41,15 @@ minecraft {
 
 sourceSets.main.resources { srcDir 'src/main/resources' }
 
-dependencies {repositories {
+dependencies repositories {
     mavenCentral()
     maven {
         name = 'MinecraftForge'
         url = 'https://maven.minecraftforge.net/'
+    }
+    maven {
+        name = 'SpongePowered'
+        url = 'https://repo.spongepowered.org/repository/maven-public/'
     }
 }
     minecraft 'net.minecraftforge:forge:1.20.1-47.2.0'
