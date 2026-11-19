@@ -31,3 +31,5 @@ jobs:
         with:
           name: elkmod-jar
           path: build/libs/*.jar
+- name: Build with Gradle
+        run: ./gradlew clean build --refresh-dependencies
