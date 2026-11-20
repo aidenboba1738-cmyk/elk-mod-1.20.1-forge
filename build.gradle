@@ -79,3 +79,6 @@ jar {
 tasks.withType(JavaCompile).configureEach {
     options.encoding = 'UTF-8'
 }
+tasks.withType(ProcessResources.class).configureEach {
+    duplicatesStrategy = DuplicatesStrategy.INCLUDE
+}
