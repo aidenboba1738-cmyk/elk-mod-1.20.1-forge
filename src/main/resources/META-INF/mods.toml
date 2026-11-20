@@ -1,0 +1,12 @@
+modLoader="javafml"
+loaderVersion="[47,)"
+license="All Rights Reserved"
+
+[[mods]]
+modId="elkmod"
+version="1.0.0"
+displayName="Elk Mod"
+authors="Wildlife"
+description='''
+Adds custom Elks with advanced AI and genetics to Minecraft 1.20.1.
+'''
